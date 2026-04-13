@@ -36,7 +36,7 @@ team_t team = {
     ""};
 
 static char *heap_listp = 0;
-static void *rover = NULL;
+static char *rover = NULL;
 
 static void *extend_heap(size_t words);
 static void *find_fit(size_t asize);
@@ -105,7 +105,7 @@ int mm_init(void)
         return -1;
     }
 
-    rover = heap_listp;
+    rover = NEXT_BLKP(heap_listp);
 
     return 0;
 }
@@ -180,8 +180,8 @@ void *mm_malloc(size_t size)
 /* 맞는 블럭 찾기 */
 static void *find_fit(size_t asize)
 {
-    void *bp;
-    void *oldRover = rover;
+    char *bp;
+    char *oldRover = rover;
 
     for (bp = rover; GET_SIZE(HDRP(bp)) > 0 ; bp = NEXT_BLKP(bp))
     {
@@ -255,7 +255,7 @@ static void *coalesce(void *ptr)
     // 둘 다 할당되어 있다면
     if (prev_alloc && next_alloc)
     {
-        return ptr;
+        
     }
     // 이전 블럭 할당됨, 이후 블럭 할당 안됨
     else if (prev_alloc && !next_alloc)
@@ -283,6 +283,12 @@ static void *coalesce(void *ptr)
         PUT(FTRP(NEXT_BLKP(ptr)), PACK(size, 0));
         ptr = PREV_BLKP(ptr);
     }
+
+    if (rover > (char *)ptr && rover < NEXT_BLKP(ptr))
+    {
+        rover = ptr;
+    }
+
     return ptr;
 }
 
