@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "mm.h"
 #include "memlib.h"
@@ -35,6 +36,7 @@ team_t team = {
     ""};
 
 static char *heap_listp = 0;
+static void *rover = NULL;
 
 static void *extend_heap(size_t words);
 static void *find_fit(size_t asize);
@@ -102,6 +104,8 @@ int mm_init(void)
     {
         return -1;
     }
+
+    rover = heap_listp;
 
     return 0;
 }
@@ -177,15 +181,26 @@ void *mm_malloc(size_t size)
 static void *find_fit(size_t asize)
 {
     void *bp;
-    
-    for (bp = NEXT_BLKP(heap_listp); GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
+    void *oldRover = rover;
+
+    for (bp = rover; GET_SIZE(HDRP(bp)) > 0 ; bp = NEXT_BLKP(bp))
     {
-        // 블럭이 할당되지 않고, 크기가 필요한 크기 이상일 때
         if (!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp)))
         {
+            rover = bp;
             return bp;
         }
     }
+
+    for (bp = NEXT_BLKP(heap_listp); bp < oldRover; bp = NEXT_BLKP(bp))
+    {
+        if (!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp)))
+        {
+            rover = bp;
+            return bp;
+        }
+    }
+
     return NULL;
 }
 
