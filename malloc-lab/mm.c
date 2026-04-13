@@ -123,7 +123,7 @@ static void *extend_heap(size_t words)
     PUT(FTRP(bp), PACK(size, 0));  // free block footer
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));  // new epilogue header
 
-    return bp;
+    return coalesce(bp);
 }
 
 /*
@@ -178,7 +178,7 @@ static void *find_fit(size_t asize)
 {
     void *bp;
     
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
+    for (bp = NEXT_BLKP(heap_listp); GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
     {
         // 블럭이 할당되지 않고, 크기가 필요한 크기 이상일 때
         if (!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp)))
@@ -212,10 +212,14 @@ static void place(void *bp, size_t asize)
 }
 
 /*
- * mm_free - Freeing a block does nothing.
+ * mm_free - 사용자가 반납한 블록의 할당을 해제하는 함수
  */
 void mm_free(void *ptr)
 {
+    if (ptr == NULL)
+    {
+        return;
+    }
     // 현재 블럭 해제
     size_t size = GET_SIZE(HDRP(ptr));
 
@@ -261,7 +265,7 @@ static void *coalesce(void *ptr)
         size += GET_SIZE(HDRP(PREV_BLKP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
 
         PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
-        PUT(HDRP(NEXT_BLKP(ptr)), PACK(size, 0));
+        PUT(FTRP(NEXT_BLKP(ptr)), PACK(size, 0));
         ptr = PREV_BLKP(ptr);
     }
     return ptr;
