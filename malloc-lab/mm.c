@@ -374,7 +374,6 @@ void *mm_realloc(void *ptr, size_t size)
 
     oldsize = GET_SIZE(HDRP(ptr));
 
-    /* 1. shrinking: keep the block as-is */
     if (asize <= oldsize)
     {
         return ptr;
@@ -382,47 +381,23 @@ void *mm_realloc(void *ptr, size_t size)
 
     next_bp = NEXT_BLKP(ptr);
 
-    /* 2. grow into next free block if possible */
     if (!GET_ALLOC(HDRP(next_bp)))
     {
-        size_t nextsize = GET_SIZE(HDRP(next_bp));
-        size_t combined_size = oldsize + nextsize;
+        size_t combined_size = oldsize + GET_SIZE(HDRP(next_bp));
 
         if (combined_size >= asize)
         {
-            size_t remainder;
-
             remove_free_block(next_bp);
-            remainder = combined_size - asize;
-
-            if (remainder >= MIN_FREE_BLOCK_SIZE)
-            {
-                void *split_bp;
-
-                PUT(HDRP(ptr), PACK(asize, 1));
-                PUT(FTRP(ptr), PACK(asize, 1));
-
-                split_bp = NEXT_BLKP(ptr);
-                PUT(HDRP(split_bp), PACK(remainder, 0));
-                PUT(FTRP(split_bp), PACK(remainder, 0));
-                insert_free_block(split_bp);
-            }
-            else
-            {
-                PUT(HDRP(ptr), PACK(combined_size, 1));
-                PUT(FTRP(ptr), PACK(combined_size, 1));
-            }
-
+            PUT(HDRP(ptr), PACK(combined_size, 1));
+            PUT(FTRP(ptr), PACK(combined_size, 1));
             return ptr;
         }
     }
 
-    /* 3. if ptr is at heap end, extend heap and grow in place */
     if (GET_SIZE(HDRP(next_bp)) == 0)
     {
         size_t extend_size = MAX(asize - oldsize, CHUNKSIZE);
         size_t combined_size;
-        size_t remainder;
 
         if (extend_heap(extend_size / WSIZE) == NULL)
         {
@@ -433,40 +408,20 @@ void *mm_realloc(void *ptr, size_t size)
         remove_free_block(next_bp);
 
         combined_size = oldsize + GET_SIZE(HDRP(next_bp));
-        remainder = combined_size - asize;
-
-        if (remainder >= MIN_FREE_BLOCK_SIZE)
-        {
-            void *split_bp;
-
-            PUT(HDRP(ptr), PACK(asize, 1));
-            PUT(FTRP(ptr), PACK(asize, 1));
-
-            split_bp = NEXT_BLKP(ptr);
-            PUT(HDRP(split_bp), PACK(remainder, 0));
-            PUT(FTRP(split_bp), PACK(remainder, 0));
-            insert_free_block(split_bp);
-        }
-        else
-        {
-            PUT(HDRP(ptr), PACK(combined_size, 1));
-            PUT(FTRP(ptr), PACK(combined_size, 1));
-        }
-
+        PUT(HDRP(ptr), PACK(combined_size, 1));
+        PUT(FTRP(ptr), PACK(combined_size, 1));
         return ptr;
     }
 
-    /* 4. fallback */
     {
         void *newptr = mm_malloc(size);
-        size_t copySize;
+        size_t copySize = oldsize - DSIZE;
 
         if (newptr == NULL)
         {
             return NULL;
         }
 
-        copySize = oldsize - DSIZE;
         if (size < copySize)
         {
             copySize = size;
