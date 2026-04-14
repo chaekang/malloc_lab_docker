@@ -349,83 +349,131 @@ static void *coalesce(void *ptr)
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
-void *mm_realloc(void *bp, size_t size)
+void *mm_realloc(void *ptr, size_t size)
 {
-    if (bp == NULL)
+    size_t asize;
+    size_t oldsize;
+    void *next_bp;
+
+    if (ptr == NULL)
     {
         return mm_malloc(size);
     }
 
     if (size == 0)
     {
-        mm_free(bp);
+        mm_free(ptr);
         return NULL;
     }
 
-    size_t asize = ALIGN(size + DSIZE);
+    asize = ALIGN(size + DSIZE);
     if (asize < MIN_FREE_BLOCK_SIZE)
     {
         asize = MIN_FREE_BLOCK_SIZE;
     }
 
-    size_t oldSize = GET_SIZE(HDRP(bp));  // 현재 블록 전체 크기
+    oldsize = GET_SIZE(HDRP(ptr));
 
-    // 크기가 줄어드는 경우
-    if (asize <= oldSize)
+    /* 1. shrinking: keep the block as-is */
+    if (asize <= oldsize)
     {
-        return bp;
+        return ptr;
     }
 
-    void *next_bp = NEXT_BLKP(bp);   // 다음 블록
+    next_bp = NEXT_BLKP(ptr);
 
-    // 다음 블록이 free라서 합치면 충분한 경우
+    /* 2. grow into next free block if possible */
     if (!GET_ALLOC(HDRP(next_bp)))
     {
-        size_t combined_size = oldSize + GET_SIZE(HDRP(next_bp));
+        size_t nextsize = GET_SIZE(HDRP(next_bp));
+        size_t combined_size = oldsize + nextsize;
 
         if (combined_size >= asize)
         {
-            remove_free_block(next_bp);
+            size_t remainder;
 
-            PUT(HDRP(bp), PACK(combined_size, 1));
-            PUT(FTRP(bp), PACK(combined_size, 1));
-            return bp;
+            remove_free_block(next_bp);
+            remainder = combined_size - asize;
+
+            if (remainder >= MIN_FREE_BLOCK_SIZE)
+            {
+                void *split_bp;
+
+                PUT(HDRP(ptr), PACK(asize, 1));
+                PUT(FTRP(ptr), PACK(asize, 1));
+
+                split_bp = NEXT_BLKP(ptr);
+                PUT(HDRP(split_bp), PACK(remainder, 0));
+                PUT(FTRP(split_bp), PACK(remainder, 0));
+                insert_free_block(split_bp);
+            }
+            else
+            {
+                PUT(HDRP(ptr), PACK(combined_size, 1));
+                PUT(FTRP(ptr), PACK(combined_size, 1));
+            }
+
+            return ptr;
         }
     }
 
-    // 다음 블록이 epilogue라서 힙을 늘릴 수 있는 경우
-    if (GET_SIZE(HDRP(bp)) == 0)
+    /* 3. if ptr is at heap end, extend heap and grow in place */
+    if (GET_SIZE(HDRP(next_bp)) == 0)
     {
-        size_t extend_size = MAX(asize - oldSize, MIN_FREE_BLOCK_SIZE);
+        size_t extend_size = MAX(asize - oldsize, CHUNKSIZE);
+        size_t combined_size;
+        size_t remainder;
 
         if (extend_heap(extend_size / WSIZE) == NULL)
         {
             return NULL;
         }
 
-        next_bp = NEXT_BLKP(bp);
+        next_bp = NEXT_BLKP(ptr);
         remove_free_block(next_bp);
 
-        size_t combined_size = oldSize + GET_SIZE(HDRP(next_bp));
-        PUT(HDRP(bp), PACK(combined_size, 1));
-        PUT(FTRP(bp), PACK(combined_size, 1));
-        
-        return bp;
+        combined_size = oldsize + GET_SIZE(HDRP(next_bp));
+        remainder = combined_size - asize;
+
+        if (remainder >= MIN_FREE_BLOCK_SIZE)
+        {
+            void *split_bp;
+
+            PUT(HDRP(ptr), PACK(asize, 1));
+            PUT(FTRP(ptr), PACK(asize, 1));
+
+            split_bp = NEXT_BLKP(ptr);
+            PUT(HDRP(split_bp), PACK(remainder, 0));
+            PUT(FTRP(split_bp), PACK(remainder, 0));
+            insert_free_block(split_bp);
+        }
+        else
+        {
+            PUT(HDRP(ptr), PACK(combined_size, 1));
+            PUT(FTRP(ptr), PACK(combined_size, 1));
+        }
+
+        return ptr;
     }
 
-    // 다 안되면 fallback
-    void *new_bp = mm_malloc(size);
-    if (new_bp == NULL)
+    /* 4. fallback */
     {
-        return NULL;
-    }
+        void *newptr = mm_malloc(size);
+        size_t copySize;
 
-    size_t copySize = oldSize - DSIZE;
-    if (size < copySize)
-    {
-        copySize = size;
+        if (newptr == NULL)
+        {
+            return NULL;
+        }
+
+        copySize = oldsize - DSIZE;
+        if (size < copySize)
+        {
+            copySize = size;
+        }
+
+        memcpy(newptr, ptr, copySize);
+        mm_free(ptr);
+        return newptr;
     }
-    memcpy(new_bp, bp, copySize);
-    mm_free(bp);
-    return new_bp;
 }
