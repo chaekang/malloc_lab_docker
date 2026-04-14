@@ -349,28 +349,83 @@ static void *coalesce(void *ptr)
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
-void *mm_realloc(void *ptr, size_t size)
+void *mm_realloc(void *bp, size_t size)
 {
-    if (ptr == NULL)
+    if (bp == NULL)
     {
         return mm_malloc(size);
     }
 
     if (size == 0)
     {
-        mm_free(ptr);
+        mm_free(bp);
         return NULL;
     }
 
-    void *newptr = mm_malloc(size);
-    if (newptr == NULL)
+    size_t asize = ALIGN(size + DSIZE);
+    if (asize < MIN_FREE_BLOCK_SIZE)
+    {
+        asize = MIN_FREE_BLOCK_SIZE;
+    }
+
+    size_t oldSize = GET_SIZE(HDRP(bp));  // 현재 블록 전체 크기
+
+    // 크기가 줄어드는 경우
+    if (asize <= oldSize)
+    {
+        return bp;
+    }
+
+    void *next_bp = NEXT_BLKP(bp);   // 다음 블록
+
+    // 다음 블록이 free라서 합치면 충분한 경우
+    if (!GET_ALLOC(HDRP(next_bp)))
+    {
+        size_t combined_size = oldSize + GET_SIZE(HDRP(next_bp));
+
+        if (combined_size >= asize)
+        {
+            remove_free_block(next_bp);
+
+            PUT(HDRP(bp), PACK(combined_size, 1));
+            PUT(FTRP(bp), PACK(combined_size, 1));
+            return bp;
+        }
+    }
+
+    // 다음 블록이 epilogue라서 힙을 늘릴 수 있는 경우
+    if (GET_SIZE(HDRP(bp)) == 0)
+    {
+        size_t extend_size = MAX(asize - oldSize, MIN_FREE_BLOCK_SIZE);
+
+        if (extend_heap(extend_size / WSIZE) == NULL)
+        {
+            return NULL;
+        }
+
+        next_bp = NEXT_BLKP(bp);
+        remove_free_block(next_bp);
+
+        size_t combined_size = oldSize + GET_SIZE(HDRP(next_bp));
+        PUT(HDRP(bp), PACK(combined_size, 1));
+        PUT(FTRP(bp), PACK(combined_size, 1));
+        
+        return bp;
+    }
+
+    // 다 안되면 fallback
+    void *new_bp = mm_malloc(size);
+    if (new_bp == NULL)
     {
         return NULL;
     }
 
-    size_t oldSize = GET_SIZE(HDRP(ptr)) - DSIZE;
-    size_t copySize = size < oldSize ? size : oldSize;
-    memcpy(newptr, ptr, copySize);
-    mm_free(ptr);
-    return newptr;
+    size_t copySize = oldSize - DSIZE;
+    if (size < copySize)
+    {
+        copySize = size;
+    }
+    memcpy(new_bp, bp, copySize);
+    mm_free(bp);
+    return new_bp;
 }
