@@ -376,21 +376,7 @@ void *mm_realloc(void *ptr, size_t size)
 
     if (asize <= oldsize)
     {
-        size_t remainder = oldsize - asize;
-
-        if (remainder >= MIN_FREE_BLOCK_SIZE)
-        {
-            void *split_bp;
-
-            PUT(HDRP(ptr), PACK(asize, 1));
-            PUT(FTRP(ptr), PACK(asize, 1));
-
-            split_bp = NEXT_BLKP(ptr);
-            PUT(HDRP(split_bp), PACK(remainder, 0));
-            PUT(FTRP(split_bp), PACK(remainder, 0));
-            insert_free_block(split_bp);
-        }
-        
+        return ptr;
     }
 
     next_bp = NEXT_BLKP(ptr);
